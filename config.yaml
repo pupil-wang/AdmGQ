@@ -1,0 +1,76 @@
+clients:
+    # Type
+    type: simple
+
+    # The total number of clients
+    total_clients: 10
+
+    # The number of clients selected in each round
+    per_round: 10
+
+    # Should the clients compute test accuracy locally?
+    do_test: false
+
+    # Processors for outbound data payloads
+
+server:
+    address: 127.0.0.1
+    port: 8000
+    random_seed: 1
+    simulate_wall_time: true
+
+    do_test: true
+
+    # Processors for inbound data payloads
+
+data:
+    datasource: MNIST
+
+    # Number of samples in each partition
+    min_partition_size: 2000
+
+    # IID or non-IID?
+    sampler: noniid
+
+    partition_size: 2000
+
+    # The random seed for sampling data
+    random_seed: 1
+
+trainer:
+    # The type of the trainer
+    type: basic
+
+    # The maximum number of training rounds
+    rounds: 10
+
+    # The maximum number of clients running concurrently
+    max_concurrency: 5
+
+    # The target accuracy
+    target_accuracy: 0.97
+
+    # The machine learning model
+    model_name: lenet5
+
+    # Number of epoches for local training in each communication round
+    epochs: 1
+    batch_size: 32
+    optimizer: SGD
+
+algorithm:
+    # Aggregation algorithm
+    type: fedavg
+
+    alpha: 0.5
+
+    B: 50
+
+parameters:
+    model:
+        num_classes: 10
+        
+    optimizer:
+        lr: 0.01
+        momentum: 0.9
+        weight_decay: 0.0

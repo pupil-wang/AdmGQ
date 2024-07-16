@@ -1,0 +1,35 @@
+.vscode
+
+
+# 忽略所有.pyc文件和__pycache__文件夹
+*.pyc
+__pycache__/
+
+# 忽略所有的备份和临时文件
+*~
+*.bak
+*.swp
+*.tmp
+
+# 忽略生成图片
+*.eps
+
+# 忽略虚拟环境文件和依赖项文件
+venv/
+env/
+ENV/
+.idea/
+*.egg-info/
+*.egg
+pip-lock.txt
+
+# 忽略Python日志文件
+*.log
+
+data
+
+models
+
+checkpoints
+
+results
