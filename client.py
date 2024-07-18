@@ -1,5 +1,8 @@
 import copy
 import logging
+import math
+import pickle
+import sys
 from types import SimpleNamespace
 import numpy as np
 from plato.clients import simple
@@ -40,11 +43,25 @@ class Client(simple.Client):
         self.t_down = self.random.randrange(0, 10)
         self.t_server = self.random.randrange(0, 10)
 
+
+
+        client_config = Config().clients._asdict()
+        max_speed, min_speed = (
+            client_config["max_up_speed"],
+            client_config["min_up_speed"],
+        )
+        self.up_speed = self.random.randrange(min_speed, max_speed)
         self.pre_weight = None
 
 
         # 量化等级
-        self.quantize_n = 8 
+        self.quantize_n = 8
+
+        self.loss = 0
+        self.loss_ = 0
+        self.loss_0 = 0
+        self.t = 0
+        self.t_ = 0
 
 
     def do_test(self, weight) -> float:
@@ -60,7 +77,10 @@ class Client(simple.Client):
         batch_size = Config().trainer._asdict()["batch_size"]
         device = self.trainer.device
         test_loader = torch.utils.data.DataLoader(
-            dataset=datasource.get_train_set(), shuffle=False, batch_size=batch_size, sampler=sampler.get()
+            dataset=datasource.get_train_set(),
+            shuffle=False,
+            batch_size=batch_size,
+            sampler=sampler.get(),
         )
 
         model.load_state_dict(weight, strict=True)
@@ -83,7 +103,6 @@ class Client(simple.Client):
             ret[name] = current_weight + deltas[name]
         return ret
 
-    
     def quantize(self, weight, deltas, n):
         """量化deltas并求和
 
@@ -103,34 +122,55 @@ class Client(simple.Client):
 
     def configure(self) -> None:
         super().configure()
+        self.model_size = sys.getsizeof(
+            pickle.dumps(self.trainer.model.cpu().state_dict())
+        )
+        self.base_comm_time = self.model_size / self.up_speed / 1024**2
+
         if self.pre_weight != None and self.quantize_n >= 4:
             deltas = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
-            w = self.quantize(self.trainer.model.cpu().state_dict(), deltas, self.quantize_n)
-            w_ = self.quantize(self.trainer.model.cpu().state_dict(), deltas, self.quantize_n // 2)
+            w = self.quantize(
+                self.trainer.model.cpu().state_dict(), deltas, self.quantize_n
+            )
+            w_ = self.quantize(
+                self.trainer.model.cpu().state_dict(), deltas, self.quantize_n // 2
+            )
             loss_0 = self.do_test(self.trainer.model.cpu().state_dict())
             loss = self.do_test(w)
             loss_ = self.do_test(w_)
-            t = self.t_compute + self.t_communication + self.t_down
-            t_ = self.t_compute + self.t_communication / 2 + self.t_down
-            r = loss_0 - loss / t
-            r_ = loss_0 - loss_ / t_
-            sign_s = np.sign((r_.cpu() - r.cpu()) / (loss.cpu() - loss_.cpu()))
-            if sign_s > 1:
-                self.quantize_n = max(self.quantize_n // 2, 32)
-            else:
-                self.quantize_n = self.quantize_n * 2
-            
-        
-        logging.info('[Client #%d]: quantize num %d', self.client_id, self.quantize_n)
+            self.t = self.base_comm_time / math.log2(self.quantize_n) + self.t_compute + self.t_down
+            self.t_ = self.base_comm_time / math.log2(self.quantize_n) / 2 + self.t_compute + self.t_down
+
+            self.loss = loss
+            self.loss_ = loss_
+            self.loss_0 = loss_0
+           
+
+           # 读取上一轮的情况
+            with open("./factor", "r") as f:
+                l = f.readline()
+                self.quantize_n = int(self.quantize_n * float(l))
+                
+
+        logging.info("[Client #%d]: quantize num %d", self.client_id, self.quantize_n)
         self.processor = model_n_quantize.Processor(n=self.quantize_n)
 
     def customize_report(self, report: SimpleNamespace) -> SimpleNamespace:
         """添加当前训练的量化等级"""
 
         report.quantize_n = self.quantize_n
+        # 正常量化
+        report.loss = self.loss
+        # 量化等级下降
+        report.loss_ = self.loss_
+        # 聚合前的损失值
+        report.loss_0 = self.loss_0
+        report.t = self.t
+        report.t_ = self.t_
+
         self.pre_weight = self.trainer.model.cpu().state_dict()
         return report
-    
+
     def calcu_delta_weight(self, weight) -> dict[str, torch.Tensor]:
         deltas = {}
         for name, current_weight in weight.items():
