@@ -3,35 +3,35 @@ clients:
     type: simple
 
     # The total number of clients
-    total_clients: 20
+    total_clients: 10
 
     # The number of clients selected in each round
-    per_round: 20
+    per_round: 10
 
     # Should the clients compute test accuracy locally?
     do_test: false
+
+    # Processors for outbound data payloads
 
     # 最大通信速度,单位MB
     max_up_speed: 5
 
     # 最小通信速度
-    min_up_speed: 3
+    min_up_speed: 2
 
     # 最大cpu频率，单位MHZ
-    max_cpu_freq: 500
+    max_cpu_freq: 2000
 
     # 最小cpu频率
-    min_cpu_freq: 200
+    min_cpu_freq: 1000
 
     # 单个样品训练需要的cpu周期
-    sample_freq_cost: 100000000
-
-    # Processors for outbound data payloads
+    sample_freq_cost: 800000000
 
 server:
     address: 127.0.0.1
     port: 18000
-    random_seed: 1
+    # random_seed: 1
     simulate_wall_time: true
 
     do_test: true
@@ -59,7 +59,7 @@ trainer:
     rounds: 200
 
     # The maximum number of clients running concurrently
-    max_concurrency: 5
+    max_concurrency: 6
 
     # The target accuracy
     target_accuracy: 0.95
@@ -76,9 +76,11 @@ trainer:
 algorithm:
     # The initial synchronization frequency
     type: fedavg
+    solver: greedy
     global_learning_rate: 1
     lr_decay: 0.998
-    k: 0.1
+    alpha: 0.5
+    B: 40
 
 
 parameters:

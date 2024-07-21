@@ -38,10 +38,22 @@ class Server(fedavg.Server):
         else:
             multi_factor = 2
 
+        self.multi_factor = multi_factor
+        self.sign = sign
         with open("./factor", "w+") as f:
             f.write(str(multi_factor))
 
-        # 记录总时间、计算开销（论文里的）、通信开销（上传的梯度总大小
+        self.record(reports)
+        # 使用特定bit解压
+        decompressed_deltas = [
+            Processor(n=int(report.quantize_n * multi_factor)).process(delta)
+            for delta, report in zip(deltas_received, reports)
+        ]
+        return super().weights_received(decompressed_deltas)
+
+
+    def record(self, reports):
+                # 记录总时间、计算开销（论文里的）、通信开销（上传的梯度总大小
         total_time = 0  # 总时间
         # 计算开销
         compute_time = sum(map(lambda x: x.t_compute, reports))
@@ -51,22 +63,16 @@ class Server(fedavg.Server):
 
         # 两次量化等级的时间开销上的差值
         delta_t = t_arr - t_arr_
-        if sign == 1:
+        if self.sign == 1:
             total_time = max(t_arr + delta_t * 2)
         else:
             total_time = max(t_arr_)
 
         # 通信开销
-        communication_cost = sum(map(lambda x: x.model_size * multi_factor, reports)) / 1024 ** 2
+        communication_cost = sum(map(lambda x: x.model_size * self.multi_factor, reports)) / 1024 ** 2
 
         with open(self.record_file, "a") as f:
             print(
                 f"{self.current_round},{total_time},{compute_time},{communication_cost}",
                 file=f,
             )
-        # 使用特定bit解压
-        decompressed_deltas = [
-            Processor(n=int(report.quantize_n * multi_factor)).process(delta)
-            for delta, report in zip(deltas_received, reports)
-        ]
-        return super().weights_received(decompressed_deltas)

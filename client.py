@@ -42,21 +42,29 @@ class Client(simple.Client):
         M = 10**6
         min_cpu_freq = client_config["min_cpu_freq"] * M
         max_cpu_freq = client_config["max_cpu_freq"] * M
-        self.cpu_freq = self.random.randrange(min_cpu_freq, max_cpu_freq, M)
+        self.cpu_freq = 0
 
         # TODO,需要具体确定数值
         self.freq_cost_sample = client_config["sample_freq_cost"]
-        self.t_communication = self.random.randrange(0, 10)
-        self.t_down = self.random.randrange(0, 10)
-        self.t_server = self.random.randrange(0, 10)
-
-
+        # self.t_communication = self.random.randrange(0, 10)
+        # self.t_down = self.random.randrange(0, 10)
+        # self.t_server = self.random.randrange(0, 10)
 
         max_speed, min_speed = (
             client_config["max_up_speed"],
             client_config["min_up_speed"],
         )
-        self.up_speed = self.random.randrange(min_speed, max_speed)
+
+
+        # __init__函数只会调用一次初始化数组
+        self.bandwidth_arr = [
+            self.random.randrange(min_speed, max_speed + 1)
+            for i in range(client_config["total_clients"])
+        ]
+        self.cpu_freq__arr = [
+            self.random.randrange(min_cpu_freq, max_cpu_freq, M)
+            for i in range(client_config["total_clients"])
+        ]
         self.pre_weight = None
 
 
@@ -131,6 +139,10 @@ class Client(simple.Client):
         self.model_size = sys.getsizeof(
             pickle.dumps(self.trainer.model.cpu().state_dict())
         )
+
+        self.up_speed = self.bandwidth_arr[self.client_id - 1]
+        self.cpu_freq = self.cpu_freq__arr[self.client_id - 1]
+
         self.base_comm_time = self.model_size / self.up_speed / 1024**2
 
         if self.pre_weight != None and self.quantize_n >= 4:
