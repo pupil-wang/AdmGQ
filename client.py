@@ -35,17 +35,23 @@ class Client(simple.Client):
         self, model=None, datasource=None, algorithm=None, trainer=None, callbacks=None
     ):
         super().__init__(model, datasource, algorithm, trainer, callbacks)
+        client_config = Config().clients._asdict()
+
         self.random = random.Random()
 
+        M = 10**6
+        min_cpu_freq = client_config["min_cpu_freq"] * M
+        max_cpu_freq = client_config["max_cpu_freq"] * M
+        self.cpu_freq = self.random.randrange(min_cpu_freq, max_cpu_freq, M)
+
         # TODO,需要具体确定数值
-        self.t_compute = self.random.randrange(0, 10)
+        self.freq_cost_sample = client_config["sample_freq_cost"]
         self.t_communication = self.random.randrange(0, 10)
         self.t_down = self.random.randrange(0, 10)
         self.t_server = self.random.randrange(0, 10)
 
 
 
-        client_config = Config().clients._asdict()
         max_speed, min_speed = (
             client_config["max_up_speed"],
             client_config["min_up_speed"],
@@ -138,8 +144,8 @@ class Client(simple.Client):
             loss_0 = self.do_test(self.trainer.model.cpu().state_dict())
             loss = self.do_test(w)
             loss_ = self.do_test(w_)
-            self.t = self.base_comm_time / math.log2(self.quantize_n) + self.t_compute + self.t_down
-            self.t_ = self.base_comm_time / math.log2(self.quantize_n) / 2 + self.t_compute + self.t_down
+            self.t = self.base_comm_time / math.log2(self.quantize_n) 
+            self.t_ = self.base_comm_time / math.log2(self.quantize_n) / 2 
 
             self.loss = loss
             self.loss_ = loss_
@@ -165,8 +171,13 @@ class Client(simple.Client):
         report.loss_ = self.loss_
         # 聚合前的损失值
         report.loss_0 = self.loss_0
-        report.t = self.t
-        report.t_ = self.t_
+        report.t_compute = (self.freq_cost_sample * report.num_samples ) / self.cpu_freq
+        
+        report.t = self.t + report.t_compute
+        
+        report.t_ = self.t +  report.t_compute
+
+        report.model_size = self.model_size / math.log2(self.quantize_n)
 
         self.pre_weight = self.trainer.model.cpu().state_dict()
         return report

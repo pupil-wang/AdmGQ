@@ -12,10 +12,19 @@ clients:
     do_test: false
 
     # 最大通信速度,单位MB
-    max_up_speed: 20
+    max_up_speed: 5
 
     # 最小通信速度
-    min_up_speed: 5
+    min_up_speed: 3
+
+    # 最大cpu频率，单位MHZ
+    max_cpu_freq: 500
+
+    # 最小cpu频率
+    min_cpu_freq: 200
+
+    # 单个样品训练需要的cpu周期
+    sample_freq_cost: 100000000
 
     # Processors for outbound data payloads
 

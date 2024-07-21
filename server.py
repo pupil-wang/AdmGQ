@@ -1,4 +1,4 @@
-
+import os
 from plato.servers import fedavg
 from plato.config import Config
 from model_n_quantize import Processor
@@ -9,11 +9,17 @@ from types import SimpleNamespace
 
 
 class Server(fedavg.Server):
-    def __init__(self, model=None, datasource=None, algorithm=None, trainer=None, callbacks=None):
+    def __init__(
+        self, model=None, datasource=None, algorithm=None, trainer=None, callbacks=None
+    ):
         super().__init__(model, datasource, algorithm, trainer, callbacks)
         with open("./factor", "w+") as f:
             f.write("1")
 
+        os.makedirs("./results/cost", exist_ok=True)
+        self.record_file = f"./results/cost/{os.getpid()}.csv"
+        with open(self.record_file, "w") as f:
+            print("round,total_time,compute_time,communication_cost", file=f)
 
     def weights_received(self, deltas_received):
         reports = [update.report for update in self.updates]
@@ -35,6 +41,29 @@ class Server(fedavg.Server):
         with open("./factor", "w+") as f:
             f.write(str(multi_factor))
 
+        # 记录总时间、计算开销（论文里的）、通信开销（上传的梯度总大小
+        total_time = 0  # 总时间
+        # 计算开销
+        compute_time = sum(map(lambda x: x.t_compute, reports))
+
+        t_arr = np.array(list(map(lambda x: x.t, reports)))
+        t_arr_ = np.array(list(map(lambda x: x.t_, reports)))
+
+        # 两次量化等级的时间开销上的差值
+        delta_t = t_arr - t_arr_
+        if sign == 1:
+            total_time = max(t_arr + delta_t * 2)
+        else:
+            total_time = max(t_arr_)
+
+        # 通信开销
+        communication_cost = sum(map(lambda x: x.model_size * multi_factor, reports)) / 1024 ** 2
+
+        with open(self.record_file, "a") as f:
+            print(
+                f"{self.current_round},{total_time},{compute_time},{communication_cost}",
+                file=f,
+            )
         # 使用特定bit解压
         decompressed_deltas = [
             Processor(n=int(report.quantize_n * multi_factor)).process(delta)
