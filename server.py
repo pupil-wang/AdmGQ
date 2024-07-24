@@ -31,8 +31,8 @@ class Server(fedavg.Server):
         loss = sum([report.loss for report in reports]) / n
         t = max([report.t for report in reports])
         t_ = max([report.t_ for report in reports])
-        r = loss_0 - loss / t
-        r_ = loss_0 - loss_ / t_
+        r = (loss_0 - loss) / t
+        r_ = (loss_0 - loss_) / t_
         sign = np.sign((r_ - r).cpu())
         multi_factor = 1
         if sign == 1:
