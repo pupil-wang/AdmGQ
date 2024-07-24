@@ -33,7 +33,10 @@ class Server(fedavg.Server):
         t_ = max([report.t_ for report in reports])
         r = (loss_0 - loss) / t
         r_ = (loss_0 - loss_) / t_
-        sign = np.sign((r_ - r).cpu())
+        if type(r_ - r) == float:
+            sign = np.sign((r_ - r))
+        else:
+            sign = np.sign((r_ - r).cpu())
         multi_factor = 1
         if sign == 1:
             multi_factor = 0.5
