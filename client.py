@@ -20,6 +20,8 @@ import random
 
 # from multiple_processor import MultipleProcessor
 
+M = 1024 * 1024
+
 
 class Client(simple.Client):
     """
@@ -39,34 +41,25 @@ class Client(simple.Client):
 
         self.random = random.Random()
 
-        M = 10**6
-        min_cpu_freq = client_config["min_cpu_freq"] * M
-        max_cpu_freq = client_config["max_cpu_freq"] * M
         self.cpu_freq = 0
 
         # TODO,需要具体确定数值
-        self.freq_cost_sample = client_config["sample_freq_cost"]
-        # self.t_communication = self.random.randrange(0, 10)
-        # self.t_down = self.random.randrange(0, 10)
-        # self.t_server = self.random.randrange(0, 10)
+        # 样本大小
+        self.sample_size = client_config["sample_size"] * M
 
-        max_speed, min_speed = (
-            client_config["max_up_speed"],
-            client_config["min_up_speed"],
-        )
-
-
+        # max_speed, min_speed = (
+        #     client_config["max_up_speed"],
+        #     client_config["min_up_speed"],
+        # )
         # __init__函数只会调用一次初始化数组
-        self.bandwidth_arr = [
-            self.random.randrange(min_speed, max_speed + 1)
-            for i in range(client_config["total_clients"])
-        ]
-        self.cpu_freq__arr = [
-            self.random.randrange(min_cpu_freq, max_cpu_freq, M)
-            for i in range(client_config["total_clients"])
-        ]
+        self.bandwidth_arr = client_config["bandwidth"]
+        self.cpu_freq__arr = client_config["cpu_freq"]
+        self.cn_arr = client_config["cn"]
+        self.up_speed = 0
+        self.cpu_freq = 0
+        self.cn = 0
+        self.freq_cost_sample = 0
         self.pre_weight = None
-
 
         # 量化等级
         self.quantize_n = 8
@@ -76,7 +69,6 @@ class Client(simple.Client):
         self.loss_0 = 0
         self.t = 0
         self.t_ = 0
-
 
     def do_test(self, weight) -> float:
         """根据weight计算在当前节点上的loss值
@@ -136,14 +128,16 @@ class Client(simple.Client):
 
     def configure(self) -> None:
         super().configure()
-        self.model_size = sys.getsizeof(
-            pickle.dumps(self.trainer.model.cpu().state_dict())
+        self.model_size = (
+            sys.getsizeof(pickle.dumps(self.trainer.model.cpu().state_dict())) / M
         )
 
         self.up_speed = self.bandwidth_arr[self.client_id - 1]
         self.cpu_freq = self.cpu_freq__arr[self.client_id - 1]
+        self.cn = self.cn_arr[self.client_id - 1]
+        self.freq_cost_sample = self.sample_size * self.cn
 
-        self.base_comm_time = self.model_size / self.up_speed / 1024**2
+        self.base_comm_time = self.model_size / self.up_speed
 
         if self.pre_weight != None and self.quantize_n >= 4:
             deltas = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
@@ -156,19 +150,17 @@ class Client(simple.Client):
             loss_0 = self.do_test(self.trainer.model.cpu().state_dict())
             loss = self.do_test(w)
             loss_ = self.do_test(w_)
-            self.t = self.base_comm_time / math.log2(self.quantize_n) 
-            self.t_ = self.base_comm_time / math.log2(self.quantize_n) / 2 
+            self.t = self.base_comm_time * math.log2(self.quantize_n) / 32
+            self.t_ = self.base_comm_time * math.log2(self.quantize_n) / 2 / 32
 
             self.loss = loss
             self.loss_ = loss_
             self.loss_0 = loss_0
-           
 
-           # 读取上一轮的情况
+            # 读取上一轮的情况
             with open("./factor", "r") as f:
                 l = f.readline()
-                self.quantize_n = int(self.quantize_n * float(l))
-                
+                self.quantize_n = min(int(self.quantize_n * float(l)), 32)
 
         logging.info("[Client #%d]: quantize num %d", self.client_id, self.quantize_n)
         self.processor = model_n_quantize.Processor(n=self.quantize_n)
@@ -183,14 +175,24 @@ class Client(simple.Client):
         report.loss_ = self.loss_
         # 聚合前的损失值
         report.loss_0 = self.loss_0
-        report.t_compute = (self.freq_cost_sample * report.num_samples ) / self.cpu_freq
-        
+        report.t_compute = (self.freq_cost_sample * report.num_samples) / self.cpu_freq
+        print(f"client {self.client_id}: {report.t_compute}")
         report.t = self.t + report.t_compute
-        
-        report.t_ = self.t +  report.t_compute
+        report.t_ = self.t_ + report.t_compute
 
-        report.model_size = self.model_size / math.log2(self.quantize_n)
+        report.quantize_n = self.quantize_n
 
+        report.model_size = self.model_size / 32 * self.quantize_n
+
+        report.compute_cost = (
+            2
+            * (10 ** (-28))
+            / 2
+            * ((self.cpu_freq) ** 2)
+            * (self.freq_cost_sample * report.num_samples)
+        )
+
+        report.each_bit_time = self.model_size / 32 / self.up_speed
         self.pre_weight = self.trainer.model.cpu().state_dict()
         return report
 

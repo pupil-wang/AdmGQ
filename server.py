@@ -19,7 +19,9 @@ class Server(fedavg.Server):
         os.makedirs("./results/cost", exist_ok=True)
         self.record_file = f"./results/cost/{os.getpid()}.csv"
         with open(self.record_file, "w") as f:
-            print("round,total_time,compute_time,communication_cost", file=f)
+            print(
+                "round,total_time,compute_time,communication_cost,compute_cost", file=f
+            )
 
     def weights_received(self, deltas_received):
         reports = [update.report for update in self.updates]
@@ -51,12 +53,14 @@ class Server(fedavg.Server):
         ]
         return super().weights_received(decompressed_deltas)
 
-
     def record(self, reports):
-                # 记录总时间、计算开销（论文里的）、通信开销（上传的梯度总大小
+        # 记录总时间、计算开销（论文里的）、通信开销（上传的梯度总大小
         total_time = 0  # 总时间
+        # 计算时间
+        compute_time = np.array([report.t_compute for report in reports])
+        compute_time_sum = sum(compute_time)
         # 计算开销
-        compute_time = sum(map(lambda x: x.t_compute, reports))
+        compute_cost = sum(map(lambda x: x.compute_cost, reports))
 
         t_arr = np.array(list(map(lambda x: x.t, reports)))
         t_arr_ = np.array(list(map(lambda x: x.t_, reports)))
@@ -69,10 +73,20 @@ class Server(fedavg.Server):
             total_time = max(t_arr_)
 
         # 通信开销
-        communication_cost = sum(map(lambda x: x.model_size * self.multi_factor, reports)) / 1024 ** 2
+        communication_cost = sum(
+            map(lambda x: x.model_size * self.multi_factor, reports)
+        )
 
+        # 通信时间
+        communication_time = np.array(
+            [
+                min(32, report.quantize_n * self.multi_factor) * report.each_bit_time 
+                for report in reports
+            ]
+        )
+        total_time = max(communication_time + compute_time)
         with open(self.record_file, "a") as f:
             print(
-                f"{self.current_round},{total_time},{compute_time},{communication_cost}",
+                f"{self.current_round},{total_time},{compute_time_sum},{communication_cost},{compute_cost}",
                 file=f,
             )
