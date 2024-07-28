@@ -77,13 +77,20 @@ class Server(fedavg.Server):
 
         # 通信开销
         communication_cost = sum(
-            map(lambda x: x.model_size * self.multi_factor, reports)
+            [
+                (
+                    report.model_size
+                    if report.quantize_n >= 32
+                    else report.model_size * self.multi_factor
+                )
+                for report in reports
+            ]
         )
 
         # 通信时间
         communication_time = np.array(
             [
-                min(32, report.quantize_n * self.multi_factor) * report.each_bit_time 
+                min(32, report.quantize_n * self.multi_factor) * report.each_bit_time
                 for report in reports
             ]
         )
