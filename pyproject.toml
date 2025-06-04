@@ -1,0 +1,8 @@
+[project]
+name = "admgq"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.9"
+dependencies = [
+    "plato-learn==1.0",
+]
