@@ -67,7 +67,7 @@ server:
 
     do_test: true
 
-    s_init: 16
+    s_init: 128
 
 
 

@@ -66,7 +66,7 @@ class Server(fedavg.Server):
         compute_cost = sum(map(lambda x: x.compute_cost, reports))
 
         # 通信开销
-        communication_cost = sum(            report.model_size for report in reports        )
+        communication_cost = sum(report.model_size for report in reports)
 
         # 通信时间
         communication_time = np.array(
@@ -78,7 +78,8 @@ class Server(fedavg.Server):
         total_time = max(communication_time + compute_time)
         with open(self.record_file, "a") as f:
             csv.writer(f).writerow(
-                [self.current_round, self.get_quantize_level(), self.s, total_time, compute_time_sum, communication_cost, compute_cost]
+                [self.current_round, self.get_quantize_level(), self.s, total_time, compute_time_sum,
+                 communication_cost, compute_cost]
             )
 
     def customize_server_payload(self, payload):
