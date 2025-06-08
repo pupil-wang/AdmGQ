@@ -135,6 +135,7 @@ class Client(simple.Client):
 
     def configure(self) -> None:
         super().configure()
+        self.pre_weight = self.trainer.model.cpu().state_dict()
 
         self.model_size = (
             sys.getsizeof(pickle.dumps(self.trainer.model.cpu().state_dict())) / M
@@ -149,23 +150,15 @@ class Client(simple.Client):
 
         self.t = self.base_comm_time * math.log2(self.quantize_n) / 32
 
-
-
         logging.info("[Client #%d]: quantize num %d", self.client_id, self.quantize_n)
         self.processor = model_n_quantize.Processor(n=self.quantize_n)
 
     def customize_report(self, report: SimpleNamespace) -> SimpleNamespace:
 
         # 计算当前轮的损失值
-        deltas = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
-        w = self.quantize(
-            self.trainer.model.cpu().state_dict(), deltas, self.quantize_n
-        )
-        deltas = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
-        w = self.quantize(
-            self.trainer.model.cpu().state_dict(), deltas, self.quantize_n
-        )
+        w = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
         loss = self.do_test(w)
+        logging.info(f"client {self.client_id}: {loss}")
         self.loss = loss
 
 
@@ -192,7 +185,6 @@ class Client(simple.Client):
         )
 
         report.each_bit_time = self.model_size / 32 / self.up_speed
-        self.pre_weight = self.trainer.model.cpu().state_dict()
         return report
 
     def calcu_delta_weight(self, weight) -> dict[str, torch.Tensor]:
@@ -207,6 +199,6 @@ class Client(simple.Client):
 
     async def _handle_payload(self, inbound_payload):
         """Handles the inbound payload upon receiving it from the server."""
-        self.quantize_n = inbound_payload[0]
+        self.quantize_n = inbound_payload[1]
         logging.debug("recv quantize num %d", self.quantize_n)
         return await super()._handle_payload(inbound_payload[0])

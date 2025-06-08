@@ -21,7 +21,6 @@ class Processor(model.Processor):
         if self.n == 32:
             return layer
         else:
-            print(self.n)
-            delta = (layer.max() - layer.min()) / (1 << self.n) 
+            delta = (layer.max() - layer.min()) / (1 << self.n)
             # 没有实际进行压缩，只是进行量化
             return ((layer - layer.min()) // delta)* delta + layer.min()
