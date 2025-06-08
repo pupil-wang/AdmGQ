@@ -156,11 +156,10 @@ class Client(simple.Client):
     def customize_report(self, report: SimpleNamespace) -> SimpleNamespace:
 
         # 计算当前轮的损失值
-        w = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
+        w = self.trainer.model.cpu().state_dict()
         loss = self.do_test(w)
         logging.info(f"client {self.client_id}: {loss}")
         self.loss = loss
-
 
         """添加当前训练的量化等级"""
 

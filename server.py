@@ -24,7 +24,7 @@ class Server(fedavg.Server):
         self.record_file = f"./results/cost/{os.getpid()}.csv"
         with open(self.record_file, "w") as f:
             csv.writer(f).writerow(
-                ["round", "quantize_level", "s", "total_time", "compute_time", "communication_cost", "compute_cost"]
+                ["round", "quantize_level", "s", "loss", "total_time", "compute_time", "communication_cost", "compute_cost"]
             )
 
     def get_quantize_level(self):
@@ -78,7 +78,7 @@ class Server(fedavg.Server):
         total_time = max(communication_time + compute_time)
         with open(self.record_file, "a") as f:
             csv.writer(f).writerow(
-                [self.current_round, self.get_quantize_level(), self.s, total_time, compute_time_sum,
+                [self.current_round, self.get_quantize_level(), self.s, self.loss, total_time, compute_time_sum,
                  communication_cost, compute_cost]
             )
 
