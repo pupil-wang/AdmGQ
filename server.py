@@ -1,8 +1,9 @@
+import logging
 import os
+import math
 from plato.servers import fedavg
 from plato.config import Config
 from model_n_quantize import Processor
-
 
 import numpy as np
 from types import SimpleNamespace
@@ -10,11 +11,12 @@ from types import SimpleNamespace
 
 class Server(fedavg.Server):
     def __init__(
-        self, model=None, datasource=None, algorithm=None, trainer=None, callbacks=None
+            self, model=None, datasource=None, algorithm=None, trainer=None, callbacks=None
     ):
         super().__init__(model, datasource, algorithm, trainer, callbacks)
-        with open("./factor", "w+") as f:
-            f.write("1")
+        self.s: int = Config().server.s_init
+        # 当前记录的损失值
+        self.loss = 0
 
         os.makedirs("./results/cost", exist_ok=True)
         self.record_file = f"./results/cost/{os.getpid()}.csv"
@@ -23,37 +25,27 @@ class Server(fedavg.Server):
                 "round,total_time,compute_time,communication_cost,compute_cost", file=f
             )
 
+    def get_quantize_level(self):
+        return math.ceil(math.log2(self.s))
+
     def weights_received(self, deltas_received):
         reports = [update.report for update in self.updates]
-        n = len(reports)
-        loss_0 = sum([report.loss_0 for report in reports]) / n
-        loss_ = sum([report.loss_ for report in reports]) / n
-        loss = sum([report.loss for report in reports]) / n
-        t = max([report.t for report in reports])
-        t_ = max([report.t_ for report in reports])
-        r = (loss_0 - loss) / t
-        r_ = (loss_0 - loss_) / t_
-        if type(r_ - r) == float:
-            sign = np.sign((r_ - r))
-        else:
-            sign = np.sign((r_ - r).cpu())
-        multi_factor = 1
-        if sign == 1:
-            multi_factor = 0.5
-        else:
-            multi_factor = 2
 
-        self.multi_factor = multi_factor
-        self.sign = sign
-        with open("./factor", "w+") as f:
-            f.write(str(multi_factor))
-
-        self.record(reports)
         # 使用特定bit解压
         decompressed_deltas = [
-            Processor(n=int(report.quantize_n * multi_factor)).process(delta)
+            Processor(n=self.get_quantize_level()).process(delta)
             for delta, report in zip(deltas_received, reports)
         ]
+
+        n = len(reports)
+        loss = sum([report.loss for report in reports]) / n
+
+        self.s = math.sqrt(self.loss / loss) * self.s
+
+        self.loss = loss
+
+        self.record(reports)
+
         return super().weights_received(decompressed_deltas)
 
     def record(self, reports):
@@ -68,12 +60,6 @@ class Server(fedavg.Server):
         t_arr = np.array(list(map(lambda x: x.t, reports)))
         t_arr_ = np.array(list(map(lambda x: x.t_, reports)))
 
-        # 两次量化等级的时间开销上的差值
-        delta_t = t_arr - t_arr_
-        if self.sign == 1:
-            total_time = max(t_arr + delta_t * 2)
-        else:
-            total_time = max(t_arr_)
 
         # 通信开销
         communication_cost = sum(
@@ -90,7 +76,7 @@ class Server(fedavg.Server):
         # 通信时间
         communication_time = np.array(
             [
-                min(32, report.quantize_n * self.multi_factor) * report.each_bit_time
+                min(32, report.quantize_n) * report.each_bit_time
                 for report in reports
             ]
         )
@@ -100,3 +86,11 @@ class Server(fedavg.Server):
                 f"{self.current_round},{total_time},{compute_time_sum},{communication_cost},{compute_cost}",
                 file=f,
             )
+
+    def customize_server_payload(self, payload):
+        """
+            Customizes the server payload before sending to the client.
+            添加量化等级
+        """
+        logging.debug(f"Server send quantize_n: {self.get_quantize_level()}")
+        return payload, self.get_quantize_level()

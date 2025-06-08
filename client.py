@@ -4,6 +4,8 @@ import math
 import pickle
 import sys
 from types import SimpleNamespace
+from typing import OrderedDict, Union
+
 import numpy as np
 from plato.clients import simple
 from plato.config import Config
@@ -37,6 +39,9 @@ class Client(simple.Client):
         self, model=None, datasource=None, algorithm=None, trainer=None, callbacks=None
     ):
         super().__init__(model, datasource, algorithm, trainer, callbacks)
+        self.base_comm_time = None
+        self.model_size = None
+        self.processor = None
         client_config = Config().clients._asdict()
 
         self.random = random.Random()
@@ -109,7 +114,8 @@ class Client(simple.Client):
             ret[name] = current_weight + deltas[name]
         return ret
 
-    def quantize(self, weight, deltas, n):
+    @staticmethod
+    def quantize(weight, deltas: Union[OrderedDict, dict[str, torch.Tensor]], n):
         """量化deltas并求和
 
         Args:
@@ -126,8 +132,10 @@ class Client(simple.Client):
         deltas = dequantize_processor.process(quantize_processor.process(deltas))
         return Client.add(weight, deltas)
 
+
     def configure(self) -> None:
         super().configure()
+
         self.model_size = (
             sys.getsizeof(pickle.dumps(self.trainer.model.cpu().state_dict())) / M
         )
@@ -139,42 +147,33 @@ class Client(simple.Client):
 
         self.base_comm_time = self.model_size / self.up_speed
 
-        if self.pre_weight != None and self.quantize_n >= 4:
-            deltas = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
-            w = self.quantize(
-                self.trainer.model.cpu().state_dict(), deltas, self.quantize_n
-            )
-            w_ = self.quantize(
-                self.trainer.model.cpu().state_dict(), deltas, self.quantize_n // 2
-            )
-            loss_0 = self.do_test(self.trainer.model.cpu().state_dict())
-            loss = self.do_test(w)
-            loss_ = self.do_test(w_)
-            self.t = self.base_comm_time * math.log2(self.quantize_n) / 32
-            self.t_ = self.base_comm_time * math.log2(self.quantize_n) / 2 / 32
+        self.t = self.base_comm_time * math.log2(self.quantize_n) / 32
 
-            self.loss = loss
-            self.loss_ = loss_
-            self.loss_0 = loss_0
 
-            # 读取上一轮的情况
-            with open("./factor", "r") as f:
-                l = f.readline()
-                self.quantize_n = min(int(self.quantize_n * float(l)), 32)
 
         logging.info("[Client #%d]: quantize num %d", self.client_id, self.quantize_n)
         self.processor = model_n_quantize.Processor(n=self.quantize_n)
 
     def customize_report(self, report: SimpleNamespace) -> SimpleNamespace:
+
+        # 计算当前轮的损失值
+        deltas = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
+        w = self.quantize(
+            self.trainer.model.cpu().state_dict(), deltas, self.quantize_n
+        )
+        deltas = self.calcu_delta_weight(self.trainer.model.cpu().state_dict())
+        w = self.quantize(
+            self.trainer.model.cpu().state_dict(), deltas, self.quantize_n
+        )
+        loss = self.do_test(w)
+        self.loss = loss
+
+
         """添加当前训练的量化等级"""
 
         report.quantize_n = self.quantize_n
         # 正常量化
         report.loss = self.loss
-        # 量化等级下降
-        report.loss_ = self.loss_
-        # 聚合前的损失值
-        report.loss_0 = self.loss_0
         report.t_compute = (self.freq_cost_sample * report.num_samples) / self.cpu_freq
         print(f"client {self.client_id}: {report.t_compute}")
         report.t = self.t + report.t_compute
@@ -188,7 +187,7 @@ class Client(simple.Client):
             2
             * (10 ** (-28))
             / 2
-            * ((self.cpu_freq) ** 2)
+            * (self.cpu_freq ** 2)
             * (self.freq_cost_sample * report.num_samples)
         )
 
@@ -205,3 +204,9 @@ class Client(simple.Client):
             _delta = current_weight - baseline
             deltas[name] = _delta
         return deltas
+
+    async def _handle_payload(self, inbound_payload):
+        """Handles the inbound payload upon receiving it from the server."""
+        self.quantize_n = inbound_payload[0]
+        logging.debug("recv quantize num %d", self.quantize_n)
+        return await super()._handle_payload(inbound_payload[0])

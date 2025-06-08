@@ -67,6 +67,10 @@ server:
 
     do_test: true
 
+    s_init: 16
+
+
+
     # Processors for inbound data payloads
 
 data:
